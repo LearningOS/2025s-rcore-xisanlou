@@ -14,6 +14,10 @@ mod switch;
 #[allow(clippy::module_inception)]
 mod task;
 
+// ****** START xisanlou add at ch3 0402 No.1
+use crate::config::MAX_SYSCALL_NUM;
+// ****** END xisanlou add at ch3 0402 No.1
+
 use crate::config::MAX_APP_NUM;
 use crate::loader::{get_num_app, init_app_cx};
 use crate::sync::UPSafeCell;
@@ -54,10 +58,13 @@ lazy_static! {
         let mut tasks = [TaskControlBlock {
             task_cx: TaskContext::zero_init(),
             task_status: TaskStatus::UnInit,
+            // ****** START xisanlou add at ch3 0402 No.2
+            syscall_times: [0; MAX_SYSCALL_NUM],
+            // ****** END xisanlou add at ch3 0402 No.2
         }; MAX_APP_NUM];
         for (i, task) in tasks.iter_mut().enumerate() {
             task.task_cx = TaskContext::goto_restore(init_app_cx(i));
-            task.task_status = TaskStatus::Ready;
+            task.task_status = TaskStatus::Ready;   
         }
         TaskManager {
             num_app,
@@ -135,6 +142,22 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    // ****** START xisanlou add at ch3 0402 No.3
+    /// syscall times add one
+    fn add_one_to_syscall_times(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times[id] += 1;
+    }
+
+    /// get a syscall ID syscall times
+    fn get_a_syscall_times(&self, id: usize) -> u32 {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times[id]
+    } 
+    // ****** END   xisanlou add at ch3 0402 No.3
 }
 
 /// Run the first task in task list.
@@ -169,3 +192,15 @@ pub fn exit_current_and_run_next() {
     mark_current_exited();
     run_next_task();
 }
+
+// ****** START xisanlou add at ch3 0402 No.4
+/// syscall times add one
+pub fn add_one_to_syscall_times(id: usize) {
+    TASK_MANAGER.add_one_to_syscall_times(id);
+}
+
+/// get a syscall ID syscall times
+pub fn get_a_syscall_times(id: usize) -> u32 {
+    TASK_MANAGER.get_a_syscall_times(id)
+}   
+// ****** END   xisanlou add at ch3 0402 No.4
