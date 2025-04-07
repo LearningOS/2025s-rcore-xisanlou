@@ -5,7 +5,7 @@ use crate::{
 };
 // ****** START xisanlou add at ch3 0402 No.1
 use crate::task::get_a_syscall_times;
-use core::arch::asm;
+//use core::arch::asm;
 use core::slice::from_raw_parts;
 use core::slice::from_raw_parts_mut;
 // ****** END xisanlou add at ch3 0402 No.1
@@ -54,11 +54,11 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
         0 => unsafe{(_id as *const u8).read_volatile() as isize},
         1 => {
             unsafe{
-                let id_src = from_raw_parts(
-                    _id as *const u8, 1
-                );
                 let id_dst = from_raw_parts_mut(
-                    _data as *mut u8, 1
+                    _id as *const u8 as *mut u8, 1
+                );
+                let id_src = from_raw_parts(
+                    &_data as *const usize as *const u8, 1
                 );
                 id_dst.copy_from_slice(id_src);
             }
@@ -67,10 +67,6 @@ pub fn sys_trace(_trace_request: usize, _id: usize, _data: usize) -> isize {
         2 => get_a_syscall_times(_id) as isize,
         _ => -1,
     };
-
-    unsafe {
-        asm!("fence.i");
-    }
 
     result
     // ****** END xisanlou add at ch3 0402 No.2
