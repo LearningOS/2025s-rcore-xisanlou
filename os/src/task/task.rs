@@ -6,6 +6,15 @@ use crate::mm::{
 };
 use crate::trap::{trap_handler, TrapContext};
 
+
+// ****** START xisanlou add at ch3 0402 No.1
+use crate::config::MAX_SYSCALL_NUM;
+// ****** END xisanlou add at ch3 0402 No.1
+
+// ****** START xisanlou add at ch4 0407 No.1
+use crate::mm::VirtPageNum;
+// ****** END xisanlou add at ch4 0407 No.1
+
 /// The task control block (TCB) of a task.
 pub struct TaskControlBlock {
     /// Save task context
@@ -28,6 +37,11 @@ pub struct TaskControlBlock {
 
     /// Program break
     pub program_brk: usize,
+
+    // ****** START xisanlou add at ch3 0402 No.2
+    /// The task syscall times
+    pub syscall_times: [u32; MAX_SYSCALL_NUM],
+    // ****** END xisanlou add at ch3 0402 No.2
 }
 
 impl TaskControlBlock {
@@ -63,6 +77,9 @@ impl TaskControlBlock {
             base_size: user_sp,
             heap_bottom: user_sp,
             program_brk: user_sp,
+            // ****** START xisanlou add at ch3 0402 No.2 ch4 update
+            syscall_times: [0; MAX_SYSCALL_NUM],
+            // ****** END xisanlou add at ch3 0402 No.2
         };
         // prepare TrapContext in user space
         let trap_cx = task_control_block.get_trap_cx();
@@ -96,6 +113,41 @@ impl TaskControlBlock {
             None
         }
     }
+
+    // ****** START xisanlou add at ch4 0407 No.2
+    /// 检查虚拟页的可读性
+    pub fn vpn_readable(&self, vpn: VirtPageNum) -> bool {
+        if let Some(pte) = self.memory_set.translate(vpn) {
+            return pte.readable();
+        } else {
+            return false;
+        }
+    }
+
+    /// 检查虚拟页的可写性
+    pub fn vpn_writeable(&self, vpn: VirtPageNum) -> bool {
+        if let Some(pte) = self.memory_set.translate(vpn) {
+            return pte.writable();
+        } else {
+            return false;
+        }
+    }
+
+    /// insert framed area to user space.
+    pub fn insert_framed_area(&mut self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+        self.memory_set.insert_framed_area(start_va, end_va, permission);
+    }
+
+    /// Test VirtAddr range overlapping.
+    pub fn vpn_no_overlap(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        self.memory_set.vpn_no_overlap(start_va, end_va)
+    }
+
+    /// unmap framed area in user space
+    pub fn unmap_user_area(&mut self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        self.memory_set.unmap_user_area(start_va, end_va)
+    }
+    // ****** END xisanlou add at ch4 0407 No.2
 }
 
 #[derive(Copy, Clone, PartialEq)]

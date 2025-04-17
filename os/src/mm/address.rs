@@ -227,6 +227,13 @@ where
     pub fn get_end(&self) -> T {
         self.r
     }
+
+    // ****** START xisanlou add at ch4 0407 No.1
+    // 检查两个地址范围是否有重叠
+    pub fn no_overlap(&self, other: Self) -> bool {
+        self.get_start() >= other.get_end() || self.get_end() <= other.get_start()
+    }
+    // ****** END   xisanlou add at ch4 0407 No.1
 }
 impl<T> IntoIterator for SimpleRange<T>
 where

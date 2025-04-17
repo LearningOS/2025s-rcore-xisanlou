@@ -24,6 +24,10 @@ pub use task::{TaskControlBlock, TaskStatus};
 
 pub use context::TaskContext;
 
+// ****** START xisanlou add at ch4 0407 No.3
+use crate::mm::{VirtAddr, MapPermission, VirtPageNum};
+// ****** END   xisanlou add at ch4 0407 No.3
+
 /// The task manager, where all the tasks are managed.
 ///
 /// Functions implemented on `TaskManager` deals with all task state transitions
@@ -153,6 +157,59 @@ impl TaskManager {
             panic!("All applications completed!");
         }
     }
+
+    // ****** START xisanlou add at ch3 0402 No.3
+    /// syscall times add one
+    fn add_one_to_syscall_times(&self, id: usize) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times[id] += 1;
+    }
+
+    /// get a syscall ID syscall times
+    fn get_a_syscall_times(&self, id: usize) -> u32 {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].syscall_times[id]
+    } 
+    // ****** END   xisanlou add at ch3 0402 No.3
+
+    // ****** START xisanlou add at ch4 0407 No.1
+    // 检查当前用户虚拟空间中VPN的可读性
+    fn current_task_vpn_readable(&self, vpn: VirtPageNum) -> bool {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].vpn_readable(vpn)
+    }
+
+    // 检查当前用户虚拟空间中VPN的可写性
+    fn current_task_vpn_writeable(&self, vpn: VirtPageNum) -> bool {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].vpn_writeable(vpn)
+    }
+
+    /// insert framed area to user space.
+    fn current_user_insert_framed_area(&self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].insert_framed_area(start_va, end_va, permission);
+    }
+
+    /// Test virtual address overlapping
+    fn current_user_vpn_no_overlap(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].vpn_no_overlap(start_va, end_va)
+    }
+
+    /// unmap framed area from user space.
+    fn current_user_unmap_user_area(&self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        let mut inner = self.inner.exclusive_access();
+        let current = inner.current_task;
+        inner.tasks[current].unmap_user_area(start_va, end_va)
+    }
+    // ****** END   xisanlou add at ch4 0407 No.1
 }
 
 /// Run the first task in task list.
@@ -202,3 +259,42 @@ pub fn current_trap_cx() -> &'static mut TrapContext {
 pub fn change_program_brk(size: i32) -> Option<usize> {
     TASK_MANAGER.change_current_program_brk(size)
 }
+
+// ****** START xisanlou add at ch3 0402 No.4
+/// syscall times add one
+pub fn add_one_to_syscall_times(id: usize) {
+    TASK_MANAGER.add_one_to_syscall_times(id);
+}
+
+/// get a syscall ID syscall times
+pub fn get_a_syscall_times(id: usize) -> u32 {
+    TASK_MANAGER.get_a_syscall_times(id)
+}   
+// ****** END   xisanlou add at ch3 0402 No.4
+
+// ****** START xisanlou add at ch4 0407 No.2
+/// 检查当前用户虚拟空间中VPN的可读性
+pub fn current_task_vpn_readable(vpn: VirtPageNum) -> bool {
+    TASK_MANAGER.current_task_vpn_readable(vpn)
+}
+
+/// 检查当前用户虚拟空间中VPN的可写性
+pub fn current_task_vpn_writeable(vpn: VirtPageNum) -> bool {
+    TASK_MANAGER.current_task_vpn_writeable(vpn)
+}
+
+/// insert framed area to user space.
+pub fn current_user_insert_framed_area(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+    TASK_MANAGER.current_user_insert_framed_area(start_va, end_va, permission);
+}
+
+/// Test virtual address overlapping
+pub fn current_user_vpn_no_overlap(start_va: VirtAddr, end_va: VirtAddr) -> bool {
+    TASK_MANAGER.current_user_vpn_no_overlap(start_va, end_va)
+}
+
+/// unmap framed area from user space.
+pub fn current_user_unmap_user_area(start_va: VirtAddr, end_va: VirtAddr) -> isize {
+    TASK_MANAGER.current_user_unmap_user_area(start_va, end_va)
+}
+// ****** END   xisanlou add at ch4 0407 No.2
