@@ -13,6 +13,10 @@ use alloc::vec::Vec;
 use bitflags::*;
 use easy_fs::{EasyFileSystem, Inode};
 use lazy_static::*;
+// ****** START xisanlou add at ch6 0430 No.1
+use super::{Stat, StatMode};
+use easy_fs::{DiskInodeType};
+// ****** END xisanlou add at ch6 0430 No.1
 
 /// inode in memory
 /// A wrapper around a filesystem inode
@@ -125,6 +129,17 @@ pub fn open_file(name: &str, flags: OpenFlags) -> Option<Arc<OSInode>> {
     }
 }
 
+// ****** START xisanlou add at ch6 0430 No.2
+/// Hard link a name to another
+pub fn link_at(old_name: &str, new_name: &str) -> isize {
+    ROOT_INODE.link_at(old_name, new_name)
+}
+/// Unlink a name
+pub fn unlink_at(name: &str) -> isize {
+    ROOT_INODE.unlink_at(name)
+}
+// ****** END xisanlou add at ch6 0430 No.2
+
 impl File for OSInode {
     fn readable(&self) -> bool {
         self.readable
@@ -156,4 +171,21 @@ impl File for OSInode {
         }
         total_write_size
     }
+
+    // ****** START xisanlou add at ch6 0430 No.3
+    fn get_fstat(&self) -> Option<Stat> {
+        let inner = self.inner.exclusive_access();
+
+        let ino = inner.inode.get_id() as u64;
+        let mode = match inner.inode.get_type() {
+            Some(DiskInodeType::File) => StatMode::FILE,
+            Some(DiskInodeType::Directory) => StatMode::DIR,
+            _ => return None,
+        };
+
+        let nlink = inner.inode.get_link_num() as u32;
+
+        Some(Stat::new(0, ino, mode, nlink))
+    }
+    // ****** END xisanlou add at ch6 0430 No.3
 }

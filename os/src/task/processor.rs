@@ -12,6 +12,10 @@ use crate::trap::TrapContext;
 use alloc::sync::Arc;
 use lazy_static::*;
 
+// ****** START xisanlou add at ch5 0421 No.1
+use crate::mm::{VirtAddr, MapPermission};
+// ****** END   xisanlou add at ch5 0421 No.1
+
 /// Processor management structure
 pub struct Processor {
     ///The task currently executing on the current processor
@@ -109,3 +113,42 @@ pub fn schedule(switched_task_cx_ptr: *mut TaskContext) {
         __switch(switched_task_cx_ptr, idle_task_cx_ptr);
     }
 }
+
+// ****** START xisanlou add at ch4 0407 No.1
+// 第五章删除了current_task_vpn_readable，current_task_vpn_writeable
+// 第五章从TaskManager移动到Processor,并使用current_task()获得当前任务
+
+/// insert framed area to user space.
+pub fn current_user_insert_framed_area(start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+    if let Some(current_task) = current_task() {
+        current_task.insert_framed_area(start_va, end_va, permission);
+    }
+}
+
+/// Test virtual address overlapping
+pub fn current_user_vpn_no_overlap(start_va: VirtAddr, end_va: VirtAddr) -> bool {
+    if let Some(current_task) = current_task() {
+        return current_task.vpn_no_overlap(start_va, end_va);
+    } else {
+        return false;
+    }
+}
+
+/// unmap framed area from user space.
+pub fn current_user_unmap_user_area(start_va: VirtAddr, end_va: VirtAddr) -> isize {
+    if let Some(current_task) = current_task() {
+        return current_task.unmap_user_area(start_va, end_va);
+    } else {
+        return -1;
+    }
+}
+// ****** END   xisanlou add at ch4 0407 No.1
+
+// ****** START xisanlou add at ch5 0421 No.2
+/// set priority pass for current task
+pub fn current_user_set_pass(pass: u64) {
+    if let Some(current_task) = current_task() {
+        current_task.set_pass(pass);
+    }
+}
+// ****** END   xisanlou add at ch5 0421 No.2

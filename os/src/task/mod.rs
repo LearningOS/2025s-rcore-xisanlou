@@ -36,6 +36,12 @@ pub use processor::{
     current_task, current_trap_cx, current_user_token, run_tasks, schedule, take_current_task,
     Processor,
 };
+
+// ****** START xisanlou add at ch5 0421 No.1
+pub use processor::{current_user_insert_framed_area, current_user_vpn_no_overlap, 
+    current_user_unmap_user_area, current_user_set_pass};
+// ****** END   xisanlou add at ch5 0421 No.1
+
 /// Suspend the current 'Running' task and run the next task in task list.
 pub fn suspend_current_and_run_next() {
     // There must be an application running.

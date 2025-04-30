@@ -11,6 +11,16 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
 
+// ****** START xisanlou add at ch5 0421 No.1
+use crate::mm::MapPermission;
+use core::cmp::Ord as Ord_cmp;
+use core::cmp::PartialOrd as PartialOrd_cmp;
+use core::cmp::PartialEq as PartialEq_cmp;
+use core::cmp::Ordering as Ordering_cmp;
+use core::cmp::Eq as Eq_cmp;
+use crate::config::{BIG_STRIDE, TASK_INIT_PRIORITY, STRIDE_MAX};
+// ****** END   xisanlou add at ch5 0421 No.1
+
 /// Task control block structure
 ///
 /// Directly save the contents that will not change during running
@@ -25,6 +35,28 @@ pub struct TaskControlBlock {
     /// Mutable
     inner: UPSafeCell<TaskControlBlockInner>,
 }
+
+// ****** START xisanlou add at ch5 0421 No.2
+impl Ord_cmp for TaskControlBlock {
+    fn cmp(&self, other: &Self) -> Ordering_cmp {
+        self.inner.exclusive_access().stride.cmp(&other.inner.exclusive_access().stride)
+    }
+}
+
+impl PartialOrd_cmp for TaskControlBlock {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering_cmp> {
+        Some(self.cmp(other))
+    }
+}
+
+impl PartialEq_cmp for TaskControlBlock {
+    fn eq(&self, _other: &Self) -> bool {
+        false
+    }
+}
+
+impl Eq_cmp for TaskControlBlock {}
+// ****** END   xisanlou add at ch5 0421 No.2
 
 impl TaskControlBlock {
     /// Get the mutable reference of the inner TCB
@@ -71,6 +103,13 @@ pub struct TaskControlBlockInner {
 
     /// Program break
     pub program_brk: usize,
+
+    // ****** START xisanlou add at ch5 0421 No.3
+    /// task stride
+    pub stride: u64,
+    /// task pass
+    pub pass: u64,
+    // ****** END   xisanlou add at ch5 0421 No.3
 }
 
 impl TaskControlBlockInner {
@@ -135,6 +174,10 @@ impl TaskControlBlock {
                     ],
                     heap_bottom: user_sp,
                     program_brk: user_sp,
+                    // ****** START xisanlou add at ch5 0421 No.4
+                    stride: 0,
+                    pass: BIG_STRIDE / TASK_INIT_PRIORITY,
+                    // ****** END   xisanlou add at ch5 0421 No.4
                 })
             },
         };
@@ -216,6 +259,10 @@ impl TaskControlBlock {
                     fd_table: new_fd_table,
                     heap_bottom: parent_inner.heap_bottom,
                     program_brk: parent_inner.program_brk,
+                    // ****** START xisanlou add at ch5 0421 No.5
+                    stride: 0,
+                    pass: BIG_STRIDE / TASK_INIT_PRIORITY,
+                    // ****** END   xisanlou add at ch5 0421 No.5
                 })
             },
         });
@@ -261,6 +308,120 @@ impl TaskControlBlock {
             None
         }
     }
+
+    // ****** START xisanlou add at ch4 0407 No.2 
+    // 第五章去除了vpn_readable和vpn_writable
+    // 第五章增加了inner借出操作
+    /// insert framed area to user space.
+    pub fn insert_framed_area(&self, start_va: VirtAddr, end_va: VirtAddr, permission: MapPermission) {
+        let mut inner = self.inner_exclusive_access();
+        inner.memory_set.insert_framed_area(start_va, end_va, permission);
+    }
+
+    /// Test VirtAddr range overlapping.
+    pub fn vpn_no_overlap(&self, start_va: VirtAddr, end_va: VirtAddr) -> bool {
+        let inner = self.inner_exclusive_access();
+        inner.memory_set.vpn_no_overlap(start_va, end_va)
+    }
+
+    /// unmap framed area in user space
+    pub fn unmap_user_area(&self, start_va: VirtAddr, end_va: VirtAddr) -> isize {
+        let mut inner = self.inner_exclusive_access();
+        inner.memory_set.unmap_user_area(start_va, end_va)
+    }
+
+    // ****** END xisanlou add at ch4 0407 No.2
+
+    // ****** START xisanlou add at ch5 0421 No.6
+    /// parent process spawn the child process
+    pub fn spawn(self: &Arc<Self>, elf_data: &[u8]) -> Arc<Self> {
+        // ---- access parent PCB exclusively
+        
+        // memory_set with elf program headers/trampoline/trap context/user stack
+        let (memory_set, user_sp, entry_point) = MemorySet::from_elf(elf_data);
+        let trap_cx_ppn = memory_set
+            .translate(VirtAddr::from(TRAP_CONTEXT_BASE).into())
+            .unwrap()
+            .ppn();
+        // alloc a pid and a kernel stack in kernel space
+        let pid_handle = pid_alloc();
+        let kernel_stack = kstack_alloc();
+        let kernel_stack_top = kernel_stack.get_top();
+        let task_control_block = Arc::new(TaskControlBlock {
+            pid: pid_handle,
+            kernel_stack,
+            inner: unsafe {
+                UPSafeCell::new(TaskControlBlockInner {
+                    trap_cx_ppn,
+                    base_size: user_sp,
+                    task_cx: TaskContext::goto_trap_return(kernel_stack_top),
+                    task_status: TaskStatus::Ready,
+                    memory_set,
+                    parent: Some(Arc::downgrade(self)),
+                    children: Vec::new(),
+                    exit_code: 0,
+                    // ****** START xisanlou add at ch6 0429 No.1 IN ch5 0421 No.6
+                    fd_table: vec![
+                        // 0 -> stdin
+                        Some(Arc::new(Stdin)),
+                        // 1 -> stdout
+                        Some(Arc::new(Stdout)),
+                        // 2 -> stderr
+                        Some(Arc::new(Stdout)),
+                    ],
+                    // ****** END xisanlou add at ch6 0429 No.1 IN ch5 0421 No.6
+                    heap_bottom: user_sp,
+                    program_brk: user_sp,
+                    stride: 0,
+                    pass: BIG_STRIDE / TASK_INIT_PRIORITY,
+                })
+            },
+        });
+        let trap_cx = task_control_block.inner_exclusive_access().get_trap_cx();
+        *trap_cx = TrapContext::app_init_context(
+            entry_point,
+            user_sp,
+            KERNEL_SPACE.exclusive_access().token(),
+            kernel_stack_top,
+            trap_handler as usize,
+        );
+        // add child
+        let mut parent_inner = self.inner_exclusive_access();
+        parent_inner.children.push(task_control_block.clone());
+           
+        
+        // return
+        task_control_block
+        // **** release child PCB
+        // ---- release parent PCB
+    }
+
+    /// set pass for task
+    pub fn set_pass(&self, pass: u64) {
+        let mut inner = self.inner_exclusive_access();
+        inner.pass = pass;
+    }
+
+    /// Test stride overflow
+    pub fn stride_overflow(&self) -> bool {
+        let inner = self.inner_exclusive_access();
+        inner.stride > STRIDE_MAX - inner.pass
+    }
+
+    /// Add stride step
+    pub fn stride_add_step(&self) -> u64 {
+        let mut inner = self.inner_exclusive_access();
+        
+        inner.stride = inner.stride.wrapping_add(inner.pass);
+        inner.stride
+    }
+
+    /// clear stride value
+    pub fn stride_clear(&self) {
+        let mut inner = self.inner_exclusive_access();
+        inner.stride = 0;
+    }
+    // ****** END   xisanlou add at ch5 0421 No.6
 }
 
 #[derive(Copy, Clone, PartialEq)]

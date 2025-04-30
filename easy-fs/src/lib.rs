@@ -16,3 +16,6 @@ pub use block_dev::BlockDevice;
 pub use efs::EasyFileSystem;
 use layout::*;
 pub use vfs::Inode;
+// ****** START xisanlou add at ch6 0430 No.1
+pub use layout::DiskInodeType;
+// ****** END xisanlou add at ch6 0430 No.1
