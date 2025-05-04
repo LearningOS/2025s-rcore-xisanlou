@@ -28,6 +28,14 @@ impl TaskControlBlock {
         let inner = process.inner_exclusive_access();
         inner.memory_set.token()
     }
+
+    // ****** START xisanlou add at ch8 0503 No.1
+    /// get task tid
+    pub fn get_tid(&self) -> usize {
+        let task_inner = self.inner.exclusive_access();
+        task_inner.res.as_ref().unwrap().tid
+    }
+    // ****** END   xisanlou add at ch8 0503 No.1
 }
 
 pub struct TaskControlBlockInner {

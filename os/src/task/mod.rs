@@ -39,6 +39,10 @@ pub use processor::{
 pub use signal::SignalFlags;
 pub use task::{TaskControlBlock, TaskStatus};
 
+// ****** START xisanlou add at ch8 0503 No.1
+pub use process::ShareResourceType;
+// ****** END   xisanlou add at ch8 0503 No.1
+
 /// Make current task suspended and switch to the next task
 pub fn suspend_current_and_run_next() {
     // There must be an application running.
@@ -81,6 +85,29 @@ pub fn exit_current_and_run_next(exit_code: i32) {
     let mut task_inner = task.inner_exclusive_access();
     let process = task.process.upgrade().unwrap();
     let tid = task_inner.res.as_ref().unwrap().tid;
+
+    // ****** START xisanlou add at ch8 0503 No.2
+    let process_inner = process.inner_exclusive_access();
+    let enable_deadlock_detect = process_inner.enable_deadlock_detect;
+    drop(process_inner);
+    
+    if enable_deadlock_detect == true {
+        let mut process_inner = process.inner_exclusive_access();
+        process_inner.finish[tid] = true;
+        process_inner.dealloc_resources_from_task(tid);
+        let option_task3 = process_inner.pop_from_wait_queue();
+        drop(process_inner);
+
+        if let Some(task3) = option_task3 {
+            let task3_tid = task3.get_tid();
+            let mut process_inner = process.inner_exclusive_access();
+            process_inner.alloc_resources_to_task(task3_tid);
+            drop(process_inner);
+            wakeup_task(task3);
+        }
+    }
+    // ****** END   xisanlou add at ch8 0503 No.2
+
     // record exit code
     task_inner.exit_code = Some(exit_code);
     task_inner.res = None;

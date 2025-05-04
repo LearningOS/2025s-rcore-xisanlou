@@ -15,6 +15,17 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefMut;
 
+// ****** START xisanlou add at ch8 0503 No.1
+/// share resource type
+#[derive(PartialEq)]
+pub enum ShareResourceType {
+    /// mutex lock
+    ShareMutex(usize),
+    /// semaphore
+    ShareSemaphore(usize),
+}
+// ****** END   xisanlou add at ch8 0503 No.1
+
 /// Process Control Block
 pub struct ProcessControlBlock {
     /// immutable
@@ -49,6 +60,23 @@ pub struct ProcessControlBlockInner {
     pub semaphore_list: Vec<Option<Arc<Semaphore>>>,
     /// condvar list
     pub condvar_list: Vec<Option<Arc<Condvar>>>,
+
+    // ****** START xisanlou add at ch8 0503 No.2
+    /// enable deadlock detect
+    pub enable_deadlock_detect: bool,
+    /// tasks is finished or not
+    pub finish: Vec<bool>,
+    /// share resources list (sem+lock)
+    pub share_resources: Vec<ShareResourceType>,
+    /// available resources 
+    pub resource_available: Vec<isize>,
+    /// need resources
+    pub resource_need: Vec<Vec<isize>>,
+    /// allocated resources
+    pub resource_allocation: Vec<Vec<isize>>,
+    /// tasks of wait resources
+    pub resource_wait_queue: Vec<Option<Arc<TaskControlBlock>>>,
+    // ****** END   xisanlou add at ch8 0503 No.2
 }
 
 impl ProcessControlBlockInner {
@@ -82,6 +110,129 @@ impl ProcessControlBlockInner {
     pub fn get_task(&self, tid: usize) -> Arc<TaskControlBlock> {
         self.tasks[tid].as_ref().unwrap().clone()
     }
+
+    // ****** START xisanlou add at ch8 0503 No.3
+    /// task have enough resource to running
+    pub fn task_has_enough_resources(&self, tid: usize) -> bool {
+        if self.finish[tid] == true {
+            return false;
+        }
+
+        self.resource_need[tid]
+            .iter()
+            .zip(self.resource_available.iter())
+            .all(|(&x, &y)| x <= y)
+    }
+
+    /// alloc resource to task
+    pub fn alloc_resources_to_task(&mut self, tid: usize) {
+        // set allocation
+        for i in 0..self.resource_available.len() {
+            self.resource_allocation[tid][i] += self.resource_need[tid][i];
+            self.resource_available[i] -= self.resource_need[tid][i];
+            self.resource_need[tid][i] = 0;
+        }
+    }
+    
+    /// dealloc resource to task
+    pub fn dealloc_resources_from_task(&mut self, tid: usize) {
+        for i in 0..self.resource_available.len() {
+            self.resource_available[i] += self.resource_allocation[tid][i];
+            self.resource_allocation[tid][i] = 0;
+        }
+    }
+    
+    /// from wait queue pop a task have ennugh resources
+    pub fn pop_from_wait_queue(&mut self) -> Option<Arc<TaskControlBlock>> {
+        if let Some(num) = self.resource_wait_queue
+                    .iter()
+                    .enumerate()
+                    .find(|(_, &ref x)| {self.task_has_enough_resources(x.as_ref().unwrap().get_tid())})
+                    .map(|(i, _)| i) {
+            return self.resource_wait_queue.remove(num);    
+        } else {
+            return None;
+        }
+    }
+    
+    /// tids of task in waited list
+    pub fn tids_in_waited_list(&self) -> Vec<usize> {
+        self.resource_wait_queue.clone().iter().map(|x| x.as_ref().unwrap().get_tid()).collect()
+
+    }
+    
+    /// test safety status
+    pub fn is_safety(&self, tid: usize) -> bool {
+        let new_need = self.resource_need.to_vec();
+        let mut new_available = self.resource_available.to_vec();
+        let mut new_finish = self.finish.to_vec();
+        let mut new_waited_tids: Vec<usize> = self.tids_in_waited_list().to_vec();
+        
+        let tasks_number = new_finish.len();
+        let resources_number = new_available.len();
+    
+        // push self to wait list
+        new_waited_tids.push(tid);
+        new_waited_tids.sort();
+    
+        // find  not waited task and dealloc resources
+        for i in 0..tasks_number {
+            if new_finish[i] == false && new_waited_tids.iter().find(|&&x| x == i).is_none() {
+                for t in 0..resources_number {
+                    new_available[t] += self.resource_allocation[i][t];
+                }
+                new_finish[i] = true;
+            }   
+        }
+    
+        loop {
+            if new_waited_tids.len() == 0 {
+                break;
+            }
+            let mut wait_tid_tuple: Option<(usize, usize)> = None;
+            
+            for i in 0..new_waited_tids.len() {
+                let tid4 = new_waited_tids[i];
+                if new_need[tid4].iter().zip(new_available.clone().iter()).all(|(&x, &y)| x <= y) {
+                    
+                    wait_tid_tuple = Some((i, tid4));
+                    break;
+                }
+            }
+
+            if let Some((serial, wait_tid)) = wait_tid_tuple {
+                // self can run
+                if tid == wait_tid {
+                    return true;
+                }
+
+                // pop task2 from waited list
+                new_waited_tids.remove(serial);
+                
+                // dealloc resources
+                for i in 0..resources_number { 
+                    new_available[i] += self.resource_need[wait_tid][i];
+                    new_available[i] += self.resource_allocation[wait_tid][i];
+                }
+
+            } else {
+                return false;
+            }
+        }
+        
+        true
+    }
+    
+    /// find share resource id
+    pub fn get_share_resource_id(&self, share_resource: &ShareResourceType) -> Option<usize> {
+        for i in 0..self.share_resources.len() {
+            if self.share_resources[i] == *share_resource {
+                return Some(i);
+            }
+        }
+        None
+    }
+    // ****** END   xisanlou add at ch8 0503 No.3
 }
 
 impl ProcessControlBlock {
@@ -119,6 +270,16 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+
+                    // ****** START xisanlou add at ch8 0503 No.4
+                    enable_deadlock_detect: false,
+                    finish: Vec::new(),
+                    share_resources: Vec::new(),
+                    resource_available: Vec::new(),
+                    resource_allocation: Vec::new(),
+                    resource_need: Vec::new(),
+                    resource_wait_queue: Vec::new(),
+                    // ****** END   xisanlou add at ch8 0503 No.4
                 })
             },
         });
@@ -144,6 +305,11 @@ impl ProcessControlBlock {
         // add main thread to the process
         let mut process_inner = process.inner_exclusive_access();
         process_inner.tasks.push(Some(Arc::clone(&task)));
+
+        // ****** START xisanlou add at ch8 0503 No.5
+        process_inner.finish.push(false);
+        // ****** END   xisanlou add at ch8 0503 No.5
+
         drop(process_inner);
         insert_into_pid2process(process.getpid(), Arc::clone(&process));
         // add main thread to scheduler
@@ -245,6 +411,16 @@ impl ProcessControlBlock {
                     mutex_list: Vec::new(),
                     semaphore_list: Vec::new(),
                     condvar_list: Vec::new(),
+
+                    // ****** START xisanlou add at ch8 0503 No.6
+                    enable_deadlock_detect: false,
+                    finish: Vec::new(),
+                    share_resources: Vec::new(),
+                    resource_available: Vec::new(),
+                    resource_allocation: Vec::new(),
+                    resource_need: Vec::new(),
+                    resource_wait_queue: Vec::new(),
+                    // ****** END   xisanlou add at ch8 0503 No.6
                 })
             },
         });
@@ -267,6 +443,11 @@ impl ProcessControlBlock {
         // attach task to child process
         let mut child_inner = child.inner_exclusive_access();
         child_inner.tasks.push(Some(Arc::clone(&task)));
+
+        // ****** START xisanlou add at ch8 0503 No.7
+        child_inner.finish.push(false);
+        // ****** END   xisanlou add at ch8 0503 No.7
+
         drop(child_inner);
         // modify kstack_top in trap_cx of this thread
         let task_inner = task.inner_exclusive_access();

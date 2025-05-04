@@ -4,6 +4,11 @@ use crate::{
     trap::{trap_handler, TrapContext},
 };
 use alloc::sync::Arc;
+
+// ****** START xisanlou add at ch8 0503 No.1
+use alloc::vec;
+// ****** END   xisanlou add at ch8 0503 No.1
+
 /// thread create syscall
 pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     trace!(
@@ -37,10 +42,32 @@ pub fn sys_thread_create(entry: usize, arg: usize) -> isize {
     let mut process_inner = process.inner_exclusive_access();
     // add new thread to current process
     let tasks = &mut process_inner.tasks;
+
+    // ****** START xisanlou add at ch8 0503 No.2
+    let mut tasks_increase_num = 0;
+    // ****** END   xisanlou add at ch8 0503 No.2
+
     while tasks.len() < new_task_tid + 1 {
         tasks.push(None);
+        // ****** START xisanlou add at ch8 0503 No.3
+        tasks_increase_num += 1;
+        // ****** END   xisanlou add at ch8 0503 No.3
     }
     tasks[new_task_tid] = Some(Arc::clone(&new_task));
+
+    // ****** START xisanlou add at ch8 0503 No.4
+    while tasks_increase_num != 0 {
+        
+        let resources_number = process_inner.share_resources.len();
+        if resources_number != 0 {
+            process_inner.resource_allocation.push(vec![0; resources_number]);
+            process_inner.resource_need.push(vec![0; resources_number]);
+        }
+        process_inner.finish.push(false);
+        tasks_increase_num -= 1;
+    }
+    // ****** END   xisanlou add at ch8 0503 No.4
+
     let new_task_trap_cx = new_task_inner.get_trap_cx();
     *new_task_trap_cx = TrapContext::app_init_context(
         entry,
